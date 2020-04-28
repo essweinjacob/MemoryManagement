@@ -51,6 +51,8 @@ int main(int argc, char *argv[]){
 	srand(thisPID);
 	int index = atoi(argv[1]);
 
+	printf("Child with index %d has started\n", index);
+
 	return index;
 }
 

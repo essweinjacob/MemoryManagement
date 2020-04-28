@@ -54,6 +54,14 @@ bool verbose = false;
 int lineCount = 0;
 
 int main(int argc, char *argv[]){
+	// Set up real time 2 second clock
+	struct itimerval time1;
+	time1.it_value.tv_sec = 2;
+	time1.it_value.tv_usec = 0;
+	time1.it_interval = time1.it_value;
+	signal(SIGALRM, god);
+	setitimer(ITIMER_REAL, &time1, NULL);
+
 	// Set up all shared memory
 	getClock();
 	getSema();
@@ -66,9 +74,44 @@ int main(int argc, char *argv[]){
 
 	// Random Number generator
 	srand(time(NULL));
+	
+	// Forking variables
+	pid_t pid = -1;
+	int activeChild = 0;
 
-
-    // Program Finished
+	while(1){
+		if(activeChild == 0){
+			pid = fork();
+			if(pid < 0){
+				perror("OSS ERROR: FAILED TO FORK");
+				god(1);
+				exit(EXIT_FAILURE);
+			}
+			// Create Child
+			if(pid == 0){
+				char convIndex[1024];
+				sprintf(convIndex, "%d", activeChild);
+				char *args[] = {"./user", convIndex,NULL};
+				int exeStatus = execvp(args[0], args);
+				if(exeStatus == -1){
+					perror("OSS: FAILED TO LAUNCH CHILD");
+					god(1);
+					exit(EXIT_FAILURE);
+				}
+			}else{
+				activeChild++;
+			}
+		}
+		int status;
+		pid_t childPid = waitpid(-1, &status, WNOHANG);
+		if(childPid > 0){
+			printf("Child has exited\n");
+			break;
+		}
+	}
+	
+	printf("Program has finished\n");
+   	// Program Finished
 	freeMem();
 }
 
