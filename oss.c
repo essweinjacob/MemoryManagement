@@ -11,6 +11,7 @@ void getMsg();
 void semLock();
 void semRelease();
 void incTimer();
+bool checkReady();
 
 // Global Variables
 // Pid list info
@@ -49,9 +50,13 @@ struct Message usrMsg;
 // Queue
 static struct Queue *queue;
 
-// Verbose and line count are global because im lazy
-bool verbose = false;
-int lineCount = 0;
+// Bitmap
+static unsigned char bitmap[MAX_PROC];
+
+// Variables for fork timer
+bool spawnReady = true;
+unsigned int lastForkSec = 0;
+unsigned int lastForkNSec = 0;
 
 int main(int argc, char *argv[]){
 	// Set up real time 2 second clock
@@ -74,11 +79,56 @@ int main(int argc, char *argv[]){
 
 	// Random Number generator
 	srand(time(NULL));
+
+	// Create bitmap and zero elements
+	memset(bitmap, '\0', sizeof(bitmap));
 	
 	// Forking variables
 	pid_t pid = -1;
 	int activeChild = 0;
 
+
+	pid = fork();
+	if(pid < 0){
+		perror("OSS ERROR: FAILED TO FORK");
+		god(1);
+		exit(EXIT_FAILURE);
+	}
+	if(pid == 0){
+		char convIndex[1024];
+		sprintf(convIndex, "%d", activeChild);
+		char *args[] = {"./user", convIndex, NULL};
+		int exeStatus = execvp(args[0], args);
+		if(exeStatus == -1){
+			perror("OSS ERROR: FAILED OT LAUNCH USER PROCESS");
+			god(1);
+			exit(EXIT_FAILURE);
+		}
+	}else{
+		
+		activeChild++;
+	}
+
+	ossMsg.mtype = ossMsg.pid = pid;
+	ossMsg.index = activeChild;
+	msgsnd(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 0);
+	printf("Sending message to user process\n");
+
+	msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 1, 0);
+	printf("OSS msgrcv error: %s\n", strerror(errno));
+	printf("new index of message is: %d\n", ossMsg.index);
+
+	//Wait for child to die
+	while(1){
+		int status;
+		pid_t childPid = waitpid(-1, &status, WNOHANG);
+		if(childPid > 0){
+			printf("Child has exited\n");
+			break;
+		}
+	}
+
+	/*
 	while(1){
 		if(activeChild == 0){
 			pid = fork();
@@ -102,6 +152,15 @@ int main(int argc, char *argv[]){
 				activeChild++;
 			}
 		}
+		
+		// Go through Queue nodes
+		struct QNode next;
+		struct Queue *trackQueue = createQueue();
+		int currentInter = 0;
+
+
+
+		// Check if child has ended
 		int status;
 		pid_t childPid = waitpid(-1, &status, WNOHANG);
 		if(childPid > 0){
@@ -109,6 +168,7 @@ int main(int argc, char *argv[]){
 			break;
 		}
 	}
+	*/
 	
 	printf("Program has finished\n");
    	// Program Finished
@@ -237,4 +297,11 @@ void semRelease(){
 	semOp.sem_op = 1;
 	semOp.sem_flg = 0;
 	semop(semaID, &semOp, 1);
+}
+
+bool checkReady(){
+	int randTime = (rand() % (500000 - 1000 + 1)) + 1000;
+	if(((lastForkSec * 1000000000 + lastForkNSec) - (timer->sec * 1000000000 + timer->nsec))>= 500){
+		spawnReady = true;
+	}
 }

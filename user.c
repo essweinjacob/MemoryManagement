@@ -53,6 +53,19 @@ int main(int argc, char *argv[]){
 
 	printf("Child with index %d has started\n", index);
 
+	while(1){
+		int rsvRes = msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), getpid(), 0);
+		if(rsvRes != -1){
+			printf("Message received in user process\n");
+			break;
+		}
+	}
+
+	ossMsg.index = 420;
+	ossMsg.mtype = 1;
+	printf("User sending message to oss\n");
+	msgsnd(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 0);
+
 	return index;
 }
 
@@ -109,7 +122,7 @@ void getPCB(){
 void getMsg(){
 	ossMsgKey = ftok("./oss.c", 4);
 	usrMsgKey = ftok("./oss.c", 5);
-	if(/*ossMsgKey == -1 ||*/ usrMsgKey == -1){
+	if(ossMsgKey == -1 || usrMsgKey == -1){
 		perror("ERROR IN USER.C: FAILED TO GENERATE KEY FOR MESSAGE QUEUES");
 		exit(EXIT_FAILURE);
 	}

@@ -14,10 +14,24 @@
 #include <errno.h>	// Errno
 #include <string.h>	// String
 #include <stdint.h>	// uint32_t
-#include <time.h> // Time
+#include <time.h> 	// Time
 #include <sys/time.h>	// Time
 
+// Limits on process generation/run
 #define MAX_PROC 18
+#define MAX_PROC_RUN 100
+
+// Define Page limits
+#define PROC_SIZE 32000
+#define PAGE_SIZE 1000
+#define MAX_PAGE 32
+
+// Define Memory limits
+#define MEM_SIZE 256000
+#define FRAME_SIZE 1000
+#define MAX_FRAME 256
+
+typedef unsigned int uint;
 
 // Time
 struct Clock{
@@ -25,10 +39,17 @@ struct Clock{
 	unsigned int nsec;
 };
 
-// Process Control Block
+typedef struct{
+	uint frameNumber;
+	uint address: 8;
+	uint diryBit: 1;
+	uint vaild: 1;
+}PageTableBlock;
+
 struct ProcessControlBlock{
 	int index;
-
+	pid_t pid;
+	PageTableBlock pageTable[MAX_PAGE];
 };
 
 // Messgae queues
@@ -36,6 +57,10 @@ struct Message{
 	long mtype;
 	int index;
 	pid_t pid;
+	int flag;
+	unsigned int address;
+	unsigned int requestPage;
+	char msg[1024];
 };
 
 // Nodes for Queue
