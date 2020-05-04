@@ -50,19 +50,23 @@ int main(int argc, char *argv[]){
 	pid_t thisPID = getpid();
 	srand(thisPID);
 	int index = atoi(argv[1]);
+	bool isTerm = false;
+	unsigned int address = 0;
+	unsigned int requestPage = 0;
 
 	printf("Child with index %d has started\n", index);
+	int rsvRes = msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), getpid(), 0); 
 
-	while(1){
-		int rsvRes = msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), getpid(), 0);
-		if(rsvRes != -1){
-			printf("Message received in user process\n");
-			break;
-		}
-	}
+	address = rand() % 32768 + 0;
+	requestPage = address >> 10;
 
-	ossMsg.index = 420;
 	ossMsg.mtype = 1;
+	ossMsg.index = 410;
+	ossMsg.address = address;
+	ossMsg.requestPage = requestPage;
+	//ossMsg.flag = (isTerm) ? 0:1;
+	//ossMsg.address = address;
+	//ossMsg.requestPage = requestPage;
 	printf("User sending message to oss\n");
 	msgsnd(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 0);
 

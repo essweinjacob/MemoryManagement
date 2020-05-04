@@ -31,7 +31,6 @@
 #define FRAME_SIZE 1000
 #define MAX_FRAME 256
 
-typedef unsigned int uint;
 
 // Time
 struct Clock{
@@ -40,16 +39,23 @@ struct Clock{
 };
 
 typedef struct{
-	uint frameNumber;
-	uint address: 8;
-	uint diryBit: 1;
-	uint vaild: 1;
+	int frame;
+	int address;
+	int access;
+	int isValid;
 }PageTableBlock;
+
 
 struct ProcessControlBlock{
 	int index;
 	pid_t pid;
 	PageTableBlock pageTable[MAX_PAGE];
+};
+
+struct FrameTableBlock{
+	int occupied;
+	int refByte;
+	int dirtyBit;
 };
 
 // Messgae queues

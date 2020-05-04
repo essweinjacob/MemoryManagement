@@ -11,7 +11,10 @@ void getMsg();
 void semLock();
 void semRelease();
 void incTimer();
+int getNSec();
+int getSec();
 bool checkReady();
+void iniFT();
 
 // Global Variables
 // Pid list info
@@ -58,6 +61,10 @@ bool spawnReady = true;
 unsigned int lastForkSec = 0;
 unsigned int lastForkNSec = 0;
 
+// Frame Table Block
+struct FrameTableBlock FT[256];
+int framePos = 0;
+
 int main(int argc, char *argv[]){
 	// Set up real time 2 second clock
 	struct itimerval time1;
@@ -82,12 +89,16 @@ int main(int argc, char *argv[]){
 
 	// Create bitmap and zero elements
 	memset(bitmap, '\0', sizeof(bitmap));
+
+	// Timer
+	timer->sec = 0;
+	timer->nsec = 0;
 	
 	// Forking variables
 	pid_t pid = -1;
 	int activeChild = 0;
 
-
+	
 	pid = fork();
 	if(pid < 0){
 		perror("OSS ERROR: FAILED TO FORK");
@@ -115,8 +126,10 @@ int main(int argc, char *argv[]){
 	printf("Sending message to user process\n");
 
 	msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 1, 0);
-	printf("OSS msgrcv error: %s\n", strerror(errno));
-	printf("new index of message is: %d\n", ossMsg.index);
+	printf("OSS: P%d requesting read of address %d at time %3d:%3d\n", activeChild, ossMsg.address, getNSec(), getSec());
+	printf("OSS: Address %d in frame %d, giving data to P%d at time %3d:%3d\n", ossMsg.address, framePos, activeChild, getNSec(), getSec());
+	//printf("OSS msgrcv error: %s\n", strerror(errno));
+	//printf("new index of message is: %d\n", ossMsg.index);
 
 	//Wait for child to die
 	while(1){
@@ -128,48 +141,6 @@ int main(int argc, char *argv[]){
 		}
 	}
 
-	/*
-	while(1){
-		if(activeChild == 0){
-			pid = fork();
-			if(pid < 0){
-				perror("OSS ERROR: FAILED TO FORK");
-				god(1);
-				exit(EXIT_FAILURE);
-			}
-			// Create Child
-			if(pid == 0){
-				char convIndex[1024];
-				sprintf(convIndex, "%d", activeChild);
-				char *args[] = {"./user", convIndex,NULL};
-				int exeStatus = execvp(args[0], args);
-				if(exeStatus == -1){
-					perror("OSS: FAILED TO LAUNCH CHILD");
-					god(1);
-					exit(EXIT_FAILURE);
-				}
-			}else{
-				activeChild++;
-			}
-		}
-		
-		// Go through Queue nodes
-		struct QNode next;
-		struct Queue *trackQueue = createQueue();
-		int currentInter = 0;
-
-
-
-		// Check if child has ended
-		int status;
-		pid_t childPid = waitpid(-1, &status, WNOHANG);
-		if(childPid > 0){
-			printf("Child has exited\n");
-			break;
-		}
-	}
-	*/
-	
 	printf("Program has finished\n");
    	// Program Finished
 	freeMem();
@@ -271,11 +242,10 @@ void getMsg(){
  * This process puts a semaphore lock on the timer, increases the time by a random amount between 1000 - 1 and checks in enough
  * microsconds have passed to equal a second and does math for it
  */
-void incTimer(){
+void incTimer(int amount){
 	semLock();
-
-	int nsecInc = (rand() % 1000) + 1;
-	timer->nsec += nsecInc;
+	
+	timer->nsec += amount;
 	while(timer->nsec >= 1000000000){
 		timer->sec++;
 		timer->nsec -= 1000000000;
@@ -283,6 +253,20 @@ void incTimer(){
 	}
 
 	semRelease();
+}
+
+int getNSec(){
+	semLock();
+	int nano = timer->nsec;
+	semRelease();
+	return nano;
+}
+
+int getSec(){
+	semLock();
+	int sec = timer->sec;
+	semRelease();
+	return sec;
 }
 
 void semLock(){
@@ -301,7 +285,16 @@ void semRelease(){
 
 bool checkReady(){
 	int randTime = (rand() % (500000 - 1000 + 1)) + 1000;
-	if(((lastForkSec * 1000000000 + lastForkNSec) - (timer->sec * 1000000000 + timer->nsec))>= 500){
+	if(((lastForkSec * 1000000000 + lastForkNSec) - (getSec() * 1000000000 + getNSec()))>= 500){
 		spawnReady = true;
+	}
+}
+
+void iniFT(){
+	int i;
+	for(i = 0; i < 256; i++){
+		FT[i].occupied = 0;
+		FT[i].refByte = -1;
+		FT[i].dirtyBit = -1;
 	}
 }
