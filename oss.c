@@ -10,16 +10,17 @@ void getPCB();
 void getMsg();
 void semLock();
 void semRelease();
-void incTimer();
+void incTimer(int amount);
 int getNSec();
 int getSec();
 bool checkReady();
 void iniFT();
+void iniPCB();
 
 // Global Variables
 // Pid list info
 int *listOfPIDS;
-int forkIndex = -1;
+int numOfPIDS;
 
 // Clock variables
 key_t clockKey = -1;
@@ -53,8 +54,8 @@ struct Message usrMsg;
 // Queue
 static struct Queue *queue;
 
-// Bitmap
-static unsigned char bitmap[MAX_PROC];
+// File
+FILE *fp;
 
 // Variables for fork timer
 bool spawnReady = true;
@@ -63,9 +64,10 @@ unsigned int lastForkNSec = 0;
 
 // Frame Table Block
 struct FrameTableBlock FT[256];
-int framePos = 0;
+int oldestFrame = -1;
 
 int main(int argc, char *argv[]){
+	/*
 	// Set up real time 2 second clock
 	struct itimerval time1;
 	time1.it_value.tv_sec = 2;
@@ -73,6 +75,7 @@ int main(int argc, char *argv[]){
 	time1.it_interval = time1.it_value;
 	signal(SIGALRM, god);
 	setitimer(ITIMER_REAL, &time1, NULL);
+	*/
 
 	// Set up all shared memory
 	getClock();
@@ -87,58 +90,171 @@ int main(int argc, char *argv[]){
 	// Random Number generator
 	srand(time(NULL));
 
-	// Create bitmap and zero elements
-	memset(bitmap, '\0', sizeof(bitmap));
+	// Initialize tables
+	iniFT();
+	//iniPCB();
 
 	// Timer
 	timer->sec = 0;
 	timer->nsec = 0;
 	
+	// PID array
+	listOfPIDS = calloc(100, (sizeof(int)));
+
 	// Forking variables
 	pid_t pid = -1;
 	int activeChild = 0;
+	int forkIndex = 0;
+	int childLaunched = 0;
+	int childExit = 0;
 
-	
-	pid = fork();
-	if(pid < 0){
-		perror("OSS ERROR: FAILED TO FORK");
-		god(1);
-		exit(EXIT_FAILURE);
-	}
-	if(pid == 0){
-		char convIndex[1024];
-		sprintf(convIndex, "%d", activeChild);
-		char *args[] = {"./user", convIndex, NULL};
-		int exeStatus = execvp(args[0], args);
-		if(exeStatus == -1){
-			perror("OSS ERROR: FAILED OT LAUNCH USER PROCESS");
-			god(1);
-			exit(EXIT_FAILURE);
+	while(1){	
+		if(forkIndex >= 18){
+			forkIndex = 0;
 		}
-	}else{
+		if(activeChild <= 17 && pcb[forkIndex].isActive == 0 && childExit < 100 && childLaunched < 100){
+			pid = fork();
+			if(pid < 0){
+				perror("OSS ERROR: FAILED TO FORK");
+				printf("Active Child = %d\n", activeChild);
+				god(1);
+				exit(EXIT_FAILURE);
+			}
+			if(pid == 0){
+				char convIndex[1024];
+				sprintf(convIndex, "%d", forkIndex);
+				//char *args[] = {"./user", "./user", convIndex, NULL};
+				int exeStatus = execl("./user", "./user", convIndex, NULL);
+				if(exeStatus == -1){
+					perror("OSS ERROR: FAILED OT LAUNCH USER PROCESS");
+					god(1);
+					exit(EXIT_FAILURE);
+				}
+			}else{
+				fp = fopen("tablelog", "a");
+				fprintf(fp, "P%d has launched\n", forkIndex);
+				printf("P%d HAS LAUNCHED\n", forkIndex);
+				fclose(fp);
+				pcb[forkIndex].isActive = 1;
+				pcb[forkIndex].index = forkIndex;
+				pcb[forkIndex].pid = listOfPIDS[numOfPIDS] = pid;
+				numOfPIDS++;
+				childLaunched++;
+				activeChild++;
+				//spawnReady = false;
+
+			}
+		}
+		else{/*
+			printf("What is broken?\n");
+			printf("Active Child = %d\n", activeChild);
+			printf("Fork index = %d\n", forkIndex);
+			printf("PCB[forkIndex].isActive = %d\n", pcb[forkIndex].isActive);
+			printf("childExit = %d\n", childExit);
+			printf("childLaunched = %d\n", childLaunched);
+			printf("spawnReady = %d\n", spawnReady);
+			*/
+		}
 		
-		activeChild++;
-	}
+		int i;
+		for(i = 0; i < 18; i++){
+			if(pcb[i].isActive == 1){
+				//printf("pcb[%d].isActive = %d\n", i, pcb[i].isActive);
+				ossMsg.mtype = ossMsg.pid = pcb[i].pid;
+				ossMsg.index = pcb[i].index;
+				int sndRes = msgsnd(ossMsgID, &ossMsg, (sizeof(struct Message)), 0);
+				fprintf(stderr, "msg send in oss %d\n", i);
+				if(sndRes == -1){
+					printf("OSS msgsnd ERROR: %s\n", strerror(errno));
+					god(1);
+					exit(EXIT_FAILURE);
+				}
+				struct msqid_ds msgds;
+				msgctl(ossMsgID, IPC_STAT, &msgds);
+				fprintf(stderr, "Number of messages: %d\n", msgds.msg_qnum);
+				int rcvRes = msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message)), 1, 0);
+				//fprintf(stderr, "msg recieve in oss %d\n", i);
+				if(rcvRes == -1){
+					printf("OSS msgrcv ERROR: %s\n", strerror(errno));
+					god(1);
+					exit(EXIT_FAILURE);
+				}
+				if(ossMsg.isTerm){
+					pcb[i].isActive = 0;
+				}else{
+					int address = ossMsg.address;
+					//printf("pcb[%d].pageNumber[%d].isValid = %d\n", i, address/1000, pcb[i].pageTable[address/1000].isValid);
 
-	ossMsg.mtype = ossMsg.pid = pid;
-	ossMsg.index = activeChild;
-	msgsnd(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 0);
-	printf("Sending message to user process\n");
+					// Access pages
+					int pageNum = address / 1000;
 
-	msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 1, 0);
-	printf("OSS: P%d requesting read of address %d at time %3d:%3d\n", activeChild, ossMsg.address, getNSec(), getSec());
-	printf("OSS: Address %d in frame %d, giving data to P%d at time %3d:%3d\n", ossMsg.address, framePos, activeChild, getNSec(), getSec());
-	//printf("OSS msgrcv error: %s\n", strerror(errno));
-	//printf("new index of message is: %d\n", ossMsg.index);
+					// See what type of access the process has to this page
+					if(pcb[i].pageTable[pageNum].access == 0){
+						fp = fopen("tablelog", "a");
+						fprintf(fp, "OSS: P%d requsting read of address %d at time %d:%d\n", i, address, getSec(), getNSec());
+						fclose(fp);
+					}else{
+						fp = fopen("tablelog", "a");
+						fprintf(fp, "OSS: P%d requsting write of address %d at time %d:%d\n", i, address, getSec(), getNSec());
+						fclose(fp);
+					}
+				
+					// See if page already exists in processes memory
+					if(pcb[i].pageTable[pageNum].isValid){
+						// Page exists
+						incTimer(10);
+						if(pcb[i].pageTable[pageNum].access == 0){
+							fp = fopen("tablelog", "a");
+							fprintf(fp, "OSS: Indicating to P%d that read has happened to address %d at time %d:%d\n", i, address, getSec(), getNSec());
+							fclose(fp);
+						}else{
+							fp = fopen("tablelog", "a");
+							fprintf(fp, "OSS: Indicating to P%d that write has happened to address %d at time %d:%d\n", i, address, getSec(), getNSec());
+							fclose(fp);
+						}
+						FT[pcb[i].pageTable[pageNum].frame].refByte = 1;
+						//pcb[i].pageTable[pageNum].isValid = false;
 
-	//Wait for child to die
-	while(1){
+					}else{
+						// Page doesnt exist page fault
+						incTimer(14);
+						fp = fopen("tablelog", "a");
+						fprintf(fp, "OSS: Address %d of P%d is not in a frame, dirty bit\n", address, i);
+						fclose(fp);
+						//pcb[i].pageTable[pageNum].isValid = true;
+					}
+
+				}
+			incTimer(0);
+			}
+		}
+		
+
 		int status;
-		pid_t childPid = waitpid(-1, &status, WNOHANG);
-		if(childPid > 0){
-			printf("Child has exited\n");
+		if((pid = waitpid((pid_t)-1, &status, WNOHANG)) > 0){
+			//printf("Past waitpid\n");
+			//printf("OSS waitpid status return: %s\n", strerror(errno)); 
+			if(WIFEXITED(status)){
+				int exitStatus = WEXITSTATUS(status);
+				//printf("OSS WEXITSTATUS return: %s\n", strerror(errno));
+				//fp = fopen("tablelog", "a");
+				//fprintf(stderr, "P%d has exited correctly\n", exitStatus);
+				printf("P%d has exited\n", exitStatus);
+				//fclose(fp);
+				activeChild--;
+				childExit++;
+			}
+		}
+
+		if(activeChild > 18){
+			god(1);
+		}
+
+		if(childExit >= 100 && activeChild <= 0){
 			break;
 		}
+		forkIndex++;
+		incTimer(0);
 	}
 
 	printf("Program has finished\n");
@@ -154,16 +270,17 @@ void freeMem(){
 	shmctl(dataID, IPC_RMID, NULL);
 	msgctl(ossMsgID, IPC_RMID, NULL);
 	msgctl(usrMsgID, IPC_RMID, NULL);
-	free(listOfPIDS);
 }
 
 void god(int signal){
+	printf("Waking god up\n");
+	freeMem();
 	int i;
 	for(i = 0; i < MAX_PROC; i++){
 		kill(listOfPIDS[i], SIGTERM);
 	}
 	printf("GOD HAS BEEN CALLED AND THE RAPTURE HAS BEGUN. SOON THERE WILL BE NOTHING\n");
-	freeMem();
+	free(listOfPIDS);
 	kill(getpid(), SIGTERM);
 }
 
@@ -243,16 +360,17 @@ void getMsg(){
  * microsconds have passed to equal a second and does math for it
  */
 void incTimer(int amount){
-	semLock();
-	
-	timer->nsec += amount;
+	if(amount == 0){
+		int randTime = rand() % 1000 + 1;
+		timer->nsec += randTime;
+	}else{	
+		timer->nsec += amount;
+	}
 	while(timer->nsec >= 1000000000){
 		timer->sec++;
 		timer->nsec -= 1000000000;
 		// DEBUG printf("Stuck in timer?\n");
 	}
-
-	semRelease();
 }
 
 int getNSec(){
@@ -294,7 +412,25 @@ void iniFT(){
 	int i;
 	for(i = 0; i < 256; i++){
 		FT[i].occupied = 0;
-		FT[i].refByte = -1;
-		FT[i].dirtyBit = -1;
+		FT[i].refByte = 0;
+		FT[i].dirtyBit = 0;
 	}
 }
+
+/*
+void iniPCB(){
+	srand(time(NULL));
+	int i;
+	for(i = 0; i < 18; i++){
+		pcb[i].index = -1;
+		pcb[i].pid = -1;
+		pcb[i].isActive = 0;
+		int j;
+		for(j = 0; j < 32; j++){
+			pcb[i].pageTable[j].frame = -1;
+			pcb[i].pageTable[j].access = rand() % 2;
+			pcb[i].pageTable[j].isValid = false;
+		}
+	}
+}
+*/

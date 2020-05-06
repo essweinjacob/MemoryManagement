@@ -40,15 +40,16 @@ struct Clock{
 
 typedef struct{
 	int frame;
-	int address;
 	int access;
-	int isValid;
+	bool isValid;
+	int address;
 }PageTableBlock;
 
 
 struct ProcessControlBlock{
 	int index;
 	pid_t pid;
+	int isActive;
 	PageTableBlock pageTable[MAX_PAGE];
 };
 
@@ -56,6 +57,8 @@ struct FrameTableBlock{
 	int occupied;
 	int refByte;
 	int dirtyBit;
+	unsigned int createNSec;
+	unsigned int createSec;
 };
 
 // Messgae queues
@@ -66,6 +69,7 @@ struct Message{
 	int flag;
 	unsigned int address;
 	unsigned int requestPage;
+	int isTerm;
 	char msg[1024];
 };
 

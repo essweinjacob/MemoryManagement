@@ -50,27 +50,51 @@ int main(int argc, char *argv[]){
 	pid_t thisPID = getpid();
 	srand(thisPID);
 	int index = atoi(argv[1]);
-	bool isTerm = false;
+
 	unsigned int address = 0;
 	unsigned int requestPage = 0;
+	int loopCount = 0;
+	int loopMax = (rand() % (1100 - 900 + 1)) + 900;
 
-	printf("Child with index %d has started\n", index);
-	int rsvRes = msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), getpid(), 0); 
-
-	address = rand() % 32768 + 0;
-	requestPage = address >> 10;
-
-	ossMsg.mtype = 1;
-	ossMsg.index = 410;
-	ossMsg.address = address;
-	ossMsg.requestPage = requestPage;
-	//ossMsg.flag = (isTerm) ? 0:1;
-	//ossMsg.address = address;
-	//ossMsg.requestPage = requestPage;
-	printf("User sending message to oss\n");
-	msgsnd(ossMsgID, &ossMsg, (sizeof(struct Message) - sizeof(long)), 0);
-
+	//printf("Child with index %d has started\n", index);
+	
+	while(1){
+		//fprintf(stderr, "Ready to recieve message in user %d Loop Count: %d Loop Max: %d\n", index, loopCount, loopMax);
+		int rsvRes = msgrcv(ossMsgID, &ossMsg, (sizeof(struct Message)), getpid(), 0); 
+		//fprintf(stderr, "msd received by user.c %d\n", index);
+		if(rsvRes == -1){
+			printf("USR msgsnd ERROR: %s\n", strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		//printf("Message received in user %d\n", index);
+	
+		if(loopCount >= 5){
+			ossMsg.isTerm = 1;
+		}else{
+			address = rand() % 32768 + 0;
+			requestPage = address >> 10;
+			ossMsg.isTerm = 0;
+		}
+	
+		ossMsg.mtype = 1;
+		ossMsg.address = address;
+		ossMsg.requestPage = requestPage;
+		int sndRes = msgsnd(ossMsgID, &ossMsg, (sizeof(struct Message)), 0);
+		//fprintf(stderr, "msg sent by user.c %d\n", index);
+		if(sndRes == -1){
+			printf("USR msgsnd ERROR: %s\n", strerror(errno));
+			exit(EXIT_FAILURE);
+		}
+		loopCount++;
+		if(ossMsg.isTerm == 1){
+			//printf("P%d is about to exit in user.c\n", ossMsg.index);
+			break;
+		}
+	}
+	
+	//printf("Returning index %d\n", index);
 	return index;
+
 }
 
 void getClock(){

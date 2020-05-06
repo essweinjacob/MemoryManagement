@@ -17,4 +17,4 @@ $(TARGET2): $(OBJS2)
 .c .o: $(HEADER)
 	$(CC) $(CFLAGS) -c $<
 clean:
-	/bin/rm -f *.o $(TARGET1) $(TARGET2)
+	/bin/rm -f *.o $(TARGET1) $(TARGET2) tablelog
