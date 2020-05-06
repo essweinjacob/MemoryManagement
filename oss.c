@@ -108,7 +108,54 @@ int main(int argc, char *argv[]){
 	int childLaunched = 0;
 	int childExit = 0;
 
-	while(1){
+	while(1){	
+		if(forkIndex >= 18){
+			forkIndex = 0;
+		}
+		if(activeChild <= 17 && pcb[forkIndex].isActive == 0 && childExit < 100 && childLaunched < 100){
+			pid = fork();
+			if(pid < 0){
+				perror("OSS ERROR: FAILED TO FORK");
+				printf("Active Child = %d\n", activeChild);
+				god(1);
+				exit(EXIT_FAILURE);
+			}
+			if(pid == 0){
+				char convIndex[1024];
+				sprintf(convIndex, "%d", forkIndex);
+				//char *args[] = {"./user", "./user", convIndex, NULL};
+				int exeStatus = execl("./user", "./user", convIndex, NULL);
+				if(exeStatus == -1){
+					perror("OSS ERROR: FAILED OT LAUNCH USER PROCESS");
+					god(1);
+					exit(EXIT_FAILURE);
+				}
+			}else{
+				fp = fopen("tablelog", "a");
+				fprintf(fp, "P%d has launched\n", forkIndex);
+				printf("P%d HAS LAUNCHED\n", forkIndex);
+				fclose(fp);
+				pcb[forkIndex].isActive = 1;
+				pcb[forkIndex].index = forkIndex;
+				pcb[forkIndex].pid = listOfPIDS[numOfPIDS] = pid;
+				numOfPIDS++;
+				childLaunched++;
+				activeChild++;
+				//spawnReady = false;
+
+			}
+		}
+		else{/*
+			printf("What is broken?\n");
+			printf("Active Child = %d\n", activeChild);
+			printf("Fork index = %d\n", forkIndex);
+			printf("PCB[forkIndex].isActive = %d\n", pcb[forkIndex].isActive);
+			printf("childExit = %d\n", childExit);
+			printf("childLaunched = %d\n", childLaunched);
+			printf("spawnReady = %d\n", spawnReady);
+			*/
+		}
+		
 		int i;
 		for(i = 0; i < 18; i++){
 			if(pcb[i].isActive == 1){
@@ -180,53 +227,8 @@ int main(int argc, char *argv[]){
 				}
 			incTimer(0);
 			}
-		}	
-		if(forkIndex >= 18){
-			forkIndex = 0;
 		}
-		if(activeChild <= 17 && pcb[forkIndex].isActive == 0 && childExit < 100 && childLaunched < 100){
-			pid = fork();
-			if(pid < 0){
-				perror("OSS ERROR: FAILED TO FORK");
-				printf("Active Child = %d\n", activeChild);
-				god(1);
-				exit(EXIT_FAILURE);
-			}
-			if(pid == 0){
-				char convIndex[1024];
-				sprintf(convIndex, "%d", forkIndex);
-				//char *args[] = {"./user", "./user", convIndex, NULL};
-				int exeStatus = execl("./user", "./user", convIndex, NULL);
-				if(exeStatus == -1){
-					perror("OSS ERROR: FAILED OT LAUNCH USER PROCESS");
-					god(1);
-					exit(EXIT_FAILURE);
-				}
-			}else{
-				fp = fopen("tablelog", "a");
-				fprintf(fp, "P%d has launched\n", forkIndex);
-				printf("P%d HAS LAUNCHED\n", forkIndex);
-				fclose(fp);
-				pcb[forkIndex].isActive = 1;
-				pcb[forkIndex].index = forkIndex;
-				pcb[forkIndex].pid = listOfPIDS[numOfPIDS] = pid;
-				numOfPIDS++;
-				childLaunched++;
-				activeChild++;
-				//spawnReady = false;
-
-			}
-		}
-		else{/*
-			printf("What is broken?\n");
-			printf("Active Child = %d\n", activeChild);
-			printf("Fork index = %d\n", forkIndex);
-			printf("PCB[forkIndex].isActive = %d\n", pcb[forkIndex].isActive);
-			printf("childExit = %d\n", childExit);
-			printf("childLaunched = %d\n", childLaunched);
-			printf("spawnReady = %d\n", spawnReady);
-			*/
-		}
+		
 
 		int status;
 		if((pid = waitpid((pid_t)-1, &status, WNOHANG)) > 0){
